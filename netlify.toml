@@ -1,0 +1,11 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+[[redirects]]
+  from = "/api/capsules"
+  to = "/.netlify/functions/capsules"
+  status = 200
+[[redirects]]
+  from = "/api/capsules/*"
+  to = "/.netlify/functions/capsules/:splat"
+  status = 200
