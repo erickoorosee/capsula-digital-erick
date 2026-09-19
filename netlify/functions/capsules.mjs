@@ -26,7 +26,7 @@ export default async req => {
     const media = blobStore('capsule-media');
     const orders = blobStore('capsule-orders');
     const url = new URL(req.url);
-    const path = url.pathname.replace(/^\/api\/capsules\/?/, '');
+    const path = url.pathname.replace(/^\/(?:api\/capsules|\.netlify\/functions\/capsules)\/?/, '');
     const parts = path.split('/').filter(Boolean);
 
     if (req.method === 'POST' && parts[0] === 'login') {
