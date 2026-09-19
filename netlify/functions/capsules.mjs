@@ -69,6 +69,16 @@ export default async req => {
       return json({ ok:true, id:order.id });
     }
 
+    if (parts[0] === 'orders' && parts[1] && req.method === 'PATCH') {
+      if (!isAdmin(req)) return json({ error:'No autorizado' },401);
+      const key='order-'+parts[1], current=await orders.get(key,{type:'json'});
+      if(!current)return json({error:'Pedido no encontrado'},404);
+      const input=await req.json(), allowed=['Nuevo','Contactado','Pagado','En producción','Entregado'];
+      if(!allowed.includes(input.status))return json({error:'Estado no válido'},400);
+      current.status=input.status; current.updatedAt=new Date().toISOString();
+      await orders.setJSON(key,current); return json({ok:true,status:current.status});
+    }
+
     if (parts[0] === 'orders' && req.method === 'GET') {
       if (!isAdmin(req)) return json({ error:'No autorizado' },401);
       const { blobs } = await orders.list({ prefix:'order-' });
