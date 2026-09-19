@@ -95,7 +95,7 @@ export default async req => {
     if (parts[0] === 'checkout' && parts[1] && req.method === 'POST') {
       const order=await orders.get('order-'+parts[1],{type:'json'});
       if(!order)return json({error:'Pedido no encontrado'},404);
-      const prices={Esencial:4900,Premium:9900,Especial:12900};
+      const prices={Esencial:500,Premium:9900,Especial:12900};
       const secret=Netlify.env.get('STRIPE_SECRET_KEY')||'';
       if(!secret.startsWith('sk_test_'))return json({error:'Stripe de prueba no está configurado'},500);
       const origin=new URL(req.url).origin;
