@@ -24,12 +24,43 @@ export default async req => {
   try {
     const capsules = blobStore('capsules');
     const media = blobStore('capsule-media');
+    const orders = blobStore('capsule-orders');
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/api\/capsules\/?/, '');
     const parts = path.split('/').filter(Boolean);
 
     if (req.method === 'POST' && parts[0] === 'login') {
       return isAdmin(req) ? json({ ok: true }) : json({ error: 'Contraseña incorrecta' }, 401);
+    }
+
+    if (parts[0] === 'orders' && req.method === 'POST') {
+      const input = await req.json();
+      const allowedPlans = ['Esencial','Premium','Especial'];
+      const allowedThemes = ['romantic','dark','gold','mystic','natural','sunset','sky','passion','minimal'];
+      const order = {
+        id: crypto.randomUUID(),
+        client: String(input.client || '').trim().slice(0,120),
+        whatsapp: String(input.whatsapp || '').replace(/[^0-9+]/g,'').slice(0,20),
+        recipient: String(input.recipient || '').trim().slice(0,120),
+        occasion: String(input.occasion || '').trim().slice(0,80),
+        package: allowedPlans.includes(input.package) ? input.package : 'Premium',
+        theme: allowedThemes.includes(input.theme) ? input.theme : 'romantic',
+        message: String(input.message || '').trim().slice(0,3000),
+        music: String(input.music || '').trim().slice(0,500),
+        notes: String(input.notes || '').trim().slice(0,1500),
+        status: 'Nuevo',
+        createdAt: new Date().toISOString()
+      };
+      if (!order.client || !order.whatsapp || !order.recipient || !order.message) return json({ error: 'Completa nombre, WhatsApp, destinatario y mensaje' }, 400);
+      await orders.setJSON('order-'+order.id, order);
+      return json({ ok:true, id:order.id });
+    }
+
+    if (parts[0] === 'orders' && req.method === 'GET') {
+      if (!isAdmin(req)) return json({ error:'No autorizado' },401);
+      const { blobs } = await orders.list({ prefix:'order-' });
+      const rows=[]; for (const blob of blobs){ const d=await orders.get(blob.key,{type:'json'}); if(d) rows.push(d); }
+      return json(rows.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')));
     }
 
     if (req.method === 'POST' && parts[0] === 'upload') {
