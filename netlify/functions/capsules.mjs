@@ -17,6 +17,12 @@ const cleanSlug = value =>
     .replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-')
     .replace(/^-|-$/g, '') || crypto.randomUUID().slice(0, 8);
 
+const adminPassword = () => Netlify.env.get('ADMIN_PASSWORD') || '';
+const isAdmin = req => {
+  const supplied = req.headers.get('x-admin-password') || '';
+  return !!adminPassword() && supplied === adminPassword();
+};
+
 export default async req => {
   try {
     const capsules = blobStore('capsules');
@@ -25,7 +31,12 @@ export default async req => {
     const path = url.pathname.replace(/^\/api\/capsules\/?/, '');
     const parts = path.split('/').filter(Boolean);
 
+    if (req.method === 'POST' && parts[0] === 'login') {
+      return isAdmin(req) ? json({ ok: true }) : json({ error: 'Contraseña incorrecta' }, 401);
+    }
+
     if (req.method === 'POST' && parts[0] === 'upload') {
+      if (!isAdmin(req)) return json({ error: 'No autorizado' }, 401);
       const input = await req.json();
       const match = String(input.dataUrl || '').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
       if (!match) return json({ error: 'Imagen no válida' }, 400);
@@ -50,6 +61,7 @@ export default async req => {
     }
 
     if (req.method === 'POST' && parts.length === 0) {
+      if (!isAdmin(req)) return json({ error: 'No autorizado' }, 401);
       const data = await req.json();
       const slug = cleanSlug(data.slug);
       data.slug = slug;
@@ -65,6 +77,7 @@ export default async req => {
     }
 
     if (req.method === 'GET') {
+      if (!isAdmin(req)) return json({ error: 'No autorizado' }, 401);
       const { blobs } = await capsules.list({ prefix: 'capsule-' });
       const rows = [];
       for (const blob of blobs) {
