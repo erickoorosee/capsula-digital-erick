@@ -69,6 +69,29 @@ export default async req => {
       return json({ ok:true, id:order.id });
     }
 
+    if (parts[0] === 'stripe-webhook' && req.method === 'POST') {
+      const secret=Netlify.env.get('STRIPE_WEBHOOK_SECRET')||'';
+      if(!secret.startsWith('whsec_'))return json({error:'Webhook de Stripe no configurado'},500);
+      const payload=await req.text();
+      const sig=req.headers.get('stripe-signature')||'';
+      const fields=Object.fromEntries(sig.split(',').map(x=>x.split('=',2)));
+      const timestamp=fields.t, received=fields.v1;
+      if(!timestamp||!received)return json({error:'Firma faltante'},400);
+      const enc=new TextEncoder();
+      const key=await crypto.subtle.importKey('raw',enc.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+      const mac=await crypto.subtle.sign('HMAC',key,enc.encode(timestamp+'.'+payload));
+      const expected=[...new Uint8Array(mac)].map(b=>b.toString(16).padStart(2,'0')).join('');
+      const a=enc.encode(expected),b=enc.encode(received);
+      let diff=a.length^b.length; for(let i=0;i<Math.min(a.length,b.length);i++)diff|=a[i]^b[i];
+      if(diff!==0||Math.abs(Date.now()/1000-Number(timestamp))>300)return json({error:'Firma inválida'},400);
+      const event=JSON.parse(payload);
+      if(event.type==='checkout.session.completed'&&event.data?.object?.payment_status==='paid'){
+        const session=event.data.object, id=session.metadata?.order_id||session.client_reference_id;
+        if(id){const keyName='order-'+id,order=await orders.get(keyName,{type:'json'});if(order){order.status='Pagado';order.paymentStatus='Pagado';order.paidAt=new Date().toISOString();order.stripeSessionId=session.id;await orders.setJSON(keyName,order)}}
+      }
+      return json({received:true});
+    }
+
     if (parts[0] === 'checkout' && parts[1] && req.method === 'POST') {
       const order=await orders.get('order-'+parts[1],{type:'json'});
       if(!order)return json({error:'Pedido no encontrado'},404);
