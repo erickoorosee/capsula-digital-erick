@@ -69,6 +69,31 @@ export default async req => {
       return json({ ok:true, id:order.id });
     }
 
+    if (parts[0] === 'checkout' && parts[1] && req.method === 'POST') {
+      const order=await orders.get('order-'+parts[1],{type:'json'});
+      if(!order)return json({error:'Pedido no encontrado'},404);
+      const prices={Esencial:4900,Premium:9900,Especial:12900};
+      const secret=Netlify.env.get('STRIPE_SECRET_KEY')||'';
+      if(!secret.startsWith('sk_test_'))return json({error:'Stripe de prueba no está configurado'},500);
+      const origin=new URL(req.url).origin;
+      const body=new URLSearchParams();
+      body.set('mode','payment');
+      body.set('success_url',origin+'/?payment=success&order='+encodeURIComponent(order.id));
+      body.set('cancel_url',origin+'/?payment=cancelled&order='+encodeURIComponent(order.id));
+      body.set('client_reference_id',order.id);
+      body.set('metadata[order_id]',order.id);
+      body.set('line_items[0][quantity]','1');
+      body.set('line_items[0][price_data][currency]','mxn');
+      body.set('line_items[0][price_data][unit_amount]',String(prices[order.package]||9900));
+      body.set('line_items[0][price_data][product_data][name]','Cápsula Digital '+order.package);
+      const sr=await fetch('https://api.stripe.com/v1/checkout/sessions',{method:'POST',headers:{authorization:'Bearer '+secret,'content-type':'application/x-www-form-urlencoded'},body});
+      const session=await sr.json();
+      if(!sr.ok)return json({error:session?.error?.message||'No se pudo iniciar el pago'},502);
+      order.stripeSessionId=session.id; order.paymentStatus='Pendiente'; order.updatedAt=new Date().toISOString();
+      await orders.setJSON('order-'+order.id,order);
+      return json({url:session.url});
+    }
+
     if (parts[0] === 'orders' && parts[1] && req.method === 'PATCH') {
       if (!isAdmin(req)) return json({ error:'No autorizado' },401);
       const key='order-'+parts[1], current=await orders.get(key,{type:'json'});
