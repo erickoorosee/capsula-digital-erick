@@ -1,9 +1,6 @@
-import { getStore, getDeployStore } from '@netlify/blobs';
+import { getStore } from '@netlify/blobs';
 
-const blobStore = name =>
-  Netlify.context?.deploy?.context === 'production'
-    ? getStore(name, { consistency: 'strong' })
-    : getDeployStore({ name });
+const blobStore = name => getStore(name, { consistency: 'strong' });
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
