@@ -33,6 +33,18 @@ export default async req => {
       return isAdmin(req) ? json({ ok: true }) : json({ error: 'Contraseña incorrecta' }, 401);
     }
 
+    if (parts[0] === 'order-upload' && req.method === 'POST') {
+      const input=await req.json();
+      const match=String(input.dataUrl||'').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+      if(!match)return json({error:'Imagen no válida'},400);
+      const bytes=Uint8Array.from(atob(match[2]),x=>x.charCodeAt(0));
+      if(bytes.byteLength>4*1024*1024)return json({error:'La imagen es demasiado grande'},413);
+      const ext=match[1]==='image/png'?'png':match[1]==='image/webp'?'webp':'jpg';
+      const key='customer-'+Date.now()+'-'+crypto.randomUUID()+'.'+ext;
+      await media.set(key,bytes.buffer,{metadata:{contentType:match[1]}});
+      return json({url:'/api/capsules/media/'+encodeURIComponent(key)});
+    }
+
     if (parts[0] === 'orders' && req.method === 'POST') {
       const input = await req.json();
       const allowedPlans = ['Esencial','Premium','Especial'];
@@ -48,6 +60,7 @@ export default async req => {
         message: String(input.message || '').trim().slice(0,3000),
         music: String(input.music || '').trim().slice(0,500),
         notes: String(input.notes || '').trim().slice(0,1500),
+        photos: Array.isArray(input.photos) ? input.photos.slice(0, input.package==='Esencial'?3:8) : [],
         status: 'Nuevo',
         createdAt: new Date().toISOString()
       };
