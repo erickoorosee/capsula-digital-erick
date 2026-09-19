@@ -97,7 +97,7 @@ export default async req => {
       if(!order)return json({error:'Pedido no encontrado'},404);
       const prices={Esencial:3900,Premium:5900,Especial:6900};
       const secret=Netlify.env.get('STRIPE_SECRET_KEY')||'';
-      const stripeMode=secret.startsWith('sk_live_')?'live':secret.startsWith('sk_test_')?'test':'';
+      const stripeMode=secret.startsWith('sk_live_')?'live':secret.startsWith('sk_test_')?'test':secret.startsWith('rk_live_')?'live':secret.startsWith('rk_test_')?'test':'';
       if(!stripeMode)return json({error:'Stripe no está configurado correctamente'},500);
       const origin=new URL(req.url).origin;
       const body=new URLSearchParams();
