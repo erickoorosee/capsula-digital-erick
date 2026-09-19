@@ -26,7 +26,7 @@ export default async req => {
     const media = blobStore('capsule-media');
     const orders = blobStore('capsule-orders');
     const url = new URL(req.url);
-    const path = url.pathname.replace(/^\/api\/capsules\/?/, '');
+    const path = url.pathname.replace(/^\/(?:api\/capsules|\.netlify\/functions\/capsules)\/?/, '');
     const parts = path.split('/').filter(Boolean);
 
     if (req.method === 'POST' && parts[0] === 'login') {
@@ -67,6 +67,54 @@ export default async req => {
       if (!order.client || !order.whatsapp || !order.recipient || !order.message) return json({ error: 'Completa nombre, WhatsApp, destinatario y mensaje' }, 400);
       await orders.setJSON('order-'+order.id, order);
       return json({ ok:true, id:order.id });
+    }
+
+    if (parts[0] === 'stripe-webhook' && req.method === 'POST') {
+      const secret=Netlify.env.get('STRIPE_WEBHOOK_SECRET')||'';
+      if(!secret.startsWith('whsec_'))return json({error:'Webhook de Stripe no configurado'},500);
+      const payload=await req.text();
+      const sig=req.headers.get('stripe-signature')||'';
+      const fields=Object.fromEntries(sig.split(',').map(x=>x.split('=',2)));
+      const timestamp=fields.t, received=fields.v1;
+      if(!timestamp||!received)return json({error:'Firma faltante'},400);
+      const enc=new TextEncoder();
+      const key=await crypto.subtle.importKey('raw',enc.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+      const mac=await crypto.subtle.sign('HMAC',key,enc.encode(timestamp+'.'+payload));
+      const expected=[...new Uint8Array(mac)].map(b=>b.toString(16).padStart(2,'0')).join('');
+      const a=enc.encode(expected),b=enc.encode(received);
+      let diff=a.length^b.length; for(let i=0;i<Math.min(a.length,b.length);i++)diff|=a[i]^b[i];
+      if(diff!==0||Math.abs(Date.now()/1000-Number(timestamp))>300)return json({error:'Firma inválida'},400);
+      const event=JSON.parse(payload);
+      if(event.type==='checkout.session.completed'&&event.data?.object?.payment_status==='paid'){
+        const session=event.data.object, id=session.metadata?.order_id||session.client_reference_id;
+        if(id){const keyName='order-'+id,order=await orders.get(keyName,{type:'json'});if(order){order.status='Pagado';order.paymentStatus='Pagado';order.paidAt=new Date().toISOString();order.stripeSessionId=session.id;await orders.setJSON(keyName,order)}}
+      }
+      return json({received:true});
+    }
+
+    if (parts[0] === 'checkout' && parts[1] && req.method === 'POST') {
+      const order=await orders.get('order-'+parts[1],{type:'json'});
+      if(!order)return json({error:'Pedido no encontrado'},404);
+      const prices={Esencial:3900,Premium:5900,Especial:6900};
+      const secret=Netlify.env.get('STRIPE_SECRET_KEY')||'';
+      if(!secret.startsWith('sk_test_'))return json({error:'Stripe de prueba no está configurado'},500);
+      const origin=new URL(req.url).origin;
+      const body=new URLSearchParams();
+      body.set('mode','payment');
+      body.set('success_url',origin+'/?payment=success&order='+encodeURIComponent(order.id));
+      body.set('cancel_url',origin+'/?payment=cancelled&order='+encodeURIComponent(order.id));
+      body.set('client_reference_id',order.id);
+      body.set('metadata[order_id]',order.id);
+      body.set('line_items[0][quantity]','1');
+      body.set('line_items[0][price_data][currency]','mxn');
+      body.set('line_items[0][price_data][unit_amount]',String(prices[order.package]||9900));
+      body.set('line_items[0][price_data][product_data][name]','Cápsula Digital '+order.package);
+      const sr=await fetch('https://api.stripe.com/v1/checkout/sessions',{method:'POST',headers:{authorization:'Bearer '+secret,'content-type':'application/x-www-form-urlencoded'},body});
+      const session=await sr.json();
+      if(!sr.ok)return json({error:session?.error?.message||'No se pudo iniciar el pago'},502);
+      order.stripeSessionId=session.id; order.paymentStatus='Pendiente'; order.updatedAt=new Date().toISOString();
+      await orders.setJSON('order-'+order.id,order);
+      return json({url:session.url});
     }
 
     if (parts[0] === 'orders' && parts[1] && req.method === 'PATCH') {
