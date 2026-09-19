@@ -1,1 +1,85 @@
-export const handler=async(event)=>({statusCode:200,headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"},body:JSON.stringify({ok:true,message:"Funcion capsules funcionando"})});
+import { getStore, getDeployStore } from '@netlify/blobs';
+
+const blobStore = name =>
+  Netlify.context?.deploy?.context === 'production'
+    ? getStore(name, { consistency: 'strong' })
+    : getDeployStore({ name });
+
+const json = (body, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8' }
+  });
+
+const cleanSlug = value =>
+  (value || crypto.randomUUID().slice(0, 8))
+    .toLowerCase().trim().replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || crypto.randomUUID().slice(0, 8);
+
+export default async req => {
+  try {
+    const capsules = blobStore('capsules');
+    const media = blobStore('capsule-media');
+    const url = new URL(req.url);
+    const path = url.pathname.replace(/^\/api\/capsules\/?/, '');
+    const parts = path.split('/').filter(Boolean);
+
+    if (req.method === 'POST' && parts[0] === 'upload') {
+      const input = await req.json();
+      const match = String(input.dataUrl || '').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+      if (!match) return json({ error: 'Imagen no válida' }, 400);
+      const bytes = Uint8Array.from(atob(match[2]), c => c.charCodeAt(0));
+      if (bytes.byteLength > 4 * 1024 * 1024) return json({ error: 'La imagen es demasiado grande' }, 413);
+      const ext = match[1] === 'image/png' ? 'png' : match[1] === 'image/webp' ? 'webp' : 'jpg';
+      const key = `photo-${Date.now()}-${crypto.randomUUID()}.${ext}`;
+      await media.set(key, bytes.buffer, { metadata: { contentType: match[1] } });
+      return json({ url: `/api/capsules/media/${encodeURIComponent(key)}` });
+    }
+
+    if (req.method === 'GET' && parts[0] === 'media' && parts[1]) {
+      const key = decodeURIComponent(parts.slice(1).join('/'));
+      const entry = await media.getWithMetadata(key, { type: 'arrayBuffer' });
+      if (!entry) return json({ error: 'Imagen no encontrada' }, 404);
+      return new Response(entry.data, {
+        headers: {
+          'content-type': entry.metadata?.contentType || 'image/jpeg',
+          'cache-control': 'public, max-age=31536000, immutable'
+        }
+      });
+    }
+
+    if (req.method === 'POST' && parts.length === 0) {
+      const data = await req.json();
+      const slug = cleanSlug(data.slug);
+      data.slug = slug;
+      data.photos = Array.isArray(data.photos) ? data.photos.slice(0, 8) : [];
+      data.updatedAt = new Date().toISOString();
+      await capsules.setJSON(`capsule-${slug}`, data);
+      return json({ ok: true, slug });
+    }
+
+    if (req.method === 'GET' && parts[0]) {
+      const data = await capsules.get(`capsule-${parts[0]}`, { type: 'json' });
+      return data ? json(data) : json({ error: 'No encontrada' }, 404);
+    }
+
+    if (req.method === 'GET') {
+      const { blobs } = await capsules.list({ prefix: 'capsule-' });
+      const rows = [];
+      for (const blob of blobs) {
+        const data = await capsules.get(blob.key, { type: 'json' });
+        if (data) rows.push(data);
+      }
+      return json(rows.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')));
+    }
+
+    return json({ error: 'Método no permitido' }, 405);
+  } catch (error) {
+    return json({ error: error.message }, 500);
+  }
+};
+
+export const config = {
+  path: ['/api/capsules', '/api/capsules/*']
+};
