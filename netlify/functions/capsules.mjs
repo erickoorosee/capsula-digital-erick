@@ -71,6 +71,15 @@ export default async req => {
       return json({ ok: true, slug });
     }
 
+    if (req.method === 'DELETE' && parts[0]) {
+      if (!isAdmin(req)) return json({ error: 'No autorizado' }, 401);
+      const key = `capsule-${parts[0]}`;
+      const data = await capsules.get(key, { type: 'json' });
+      if (!data) return json({ error: 'No encontrada' }, 404);
+      await capsules.delete(key);
+      return json({ ok: true });
+    }
+
     if (req.method === 'GET' && parts[0]) {
       const data = await capsules.get(`capsule-${parts[0]}`, { type: 'json' });
       return data ? json(data) : json({ error: 'No encontrada' }, 404);
