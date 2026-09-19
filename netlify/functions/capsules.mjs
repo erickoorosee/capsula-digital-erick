@@ -1,9 +1,6 @@
-import { getStore, getDeployStore } from '@netlify/blobs';
+import { getStore } from '@netlify/blobs';
 
-const blobStore = name =>
-  Netlify.context?.deploy?.context === 'production'
-    ? getStore(name, { consistency: 'strong' })
-    : getDeployStore({ name });
+const blobStore = name => getStore(name, { consistency: 'strong' });
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -69,6 +66,15 @@ export default async req => {
       data.updatedAt = new Date().toISOString();
       await capsules.setJSON(`capsule-${slug}`, data);
       return json({ ok: true, slug });
+    }
+
+    if (req.method === 'DELETE' && parts[0]) {
+      if (!isAdmin(req)) return json({ error: 'No autorizado' }, 401);
+      const key = `capsule-${parts[0]}`;
+      const data = await capsules.get(key, { type: 'json' });
+      if (!data) return json({ error: 'No encontrada' }, 404);
+      await capsules.delete(key);
+      return json({ ok: true });
     }
 
     if (req.method === 'GET' && parts[0]) {
