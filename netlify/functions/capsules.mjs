@@ -52,6 +52,24 @@ export default async req => {
       return json({url:'/api/capsules/media/'+encodeURIComponent(key)});
     }
 
+    if (parts[0] === 'order-video-chunk' && req.method === 'POST') {
+      const input=await req.json(),uploadId=String(input.uploadId||'').replace(/[^a-zA-Z0-9-]/g,''),index=Number(input.index),total=Number(input.total),type=String(input.type||'video/mp4');
+      if(!uploadId||!Number.isInteger(index)||index<0||!Number.isInteger(total)||total<1||total>25||!type.startsWith('video/'))return json({error:'Fragmento de video no válido'},400);
+      const match=String(input.dataUrl||'').match(/^data:video\/[a-zA-Z0-9.+-]+;base64,(.+)$/);if(!match)return json({error:'Fragmento no válido'},400);
+      const bytes=Uint8Array.from(atob(match[1]),x=>x.charCodeAt(0));if(bytes.byteLength>1200*1024)return json({error:'Fragmento demasiado grande'},413);
+      await media.set('tmp-video-'+uploadId+'-'+index,bytes.buffer,{metadata:{contentType:'application/octet-stream'}});
+      return json({ok:true,index});
+    }
+    if (parts[0] === 'order-video-complete' && req.method === 'POST') {
+      const input=await req.json(),uploadId=String(input.uploadId||'').replace(/[^a-zA-Z0-9-]/g,''),total=Number(input.total),type=String(input.type||'video/mp4');
+      if(!uploadId||!Number.isInteger(total)||total<1||total>25||!type.startsWith('video/'))return json({error:'Video no válido'},400);
+      const chunks=[];let size=0;for(let i=0;i<total;i++){const part=await media.get('tmp-video-'+uploadId+'-'+i,{type:'arrayBuffer'});if(!part)return json({error:'Falta una parte del video. Intenta subirlo otra vez.'},400);const u=new Uint8Array(part);size+=u.byteLength;if(size>20*1024*1024)return json({error:'El video supera 20 MB'},413);chunks.push(u)}
+      const joined=new Uint8Array(size);let offset=0;for(const u of chunks){joined.set(u,offset);offset+=u.byteLength}
+      const key='customer-video-'+Date.now()+'-'+crypto.randomUUID();await media.set(key,joined.buffer,{metadata:{contentType:type}});
+      for(let i=0;i<total;i++)await media.delete('tmp-video-'+uploadId+'-'+i);
+      return json({url:'/api/capsules/media/'+encodeURIComponent(key)});
+    }
+
     if (parts[0] === 'order-video-upload' && req.method === 'POST') {
       const input=await req.json(),match=String(input.dataUrl||'').match(/^data:(video\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
       if(!match)return json({error:'Video no válido'},400);
