@@ -59,6 +59,11 @@ export default async req => {
         theme: allowedThemes.includes(input.theme) ? input.theme : 'romantic',
         message: String(input.message || '').trim().slice(0,3000),
         music: String(input.music || '').trim().slice(0,500),
+        experience: ['classic','cinematic','story','birthday','proposal'].includes(input.experience) ? input.experience : 'cinematic',
+        voice: String(input.voice || '').trim().slice(0,1000),
+        video: String(input.video || '').trim().slice(0,1000),
+        unlockAt: String(input.unlockAt || '').trim().slice(0,40),
+        secret: String(input.secret || '').trim().slice(0,120),
         notes: String(input.notes || '').trim().slice(0,1500),
         photos: Array.isArray(input.photos) ? input.photos.slice(0, input.package==='Esencial'?3:8) : [],
         status: 'Nuevo',
@@ -180,9 +185,22 @@ export default async req => {
       return json({ ok: true });
     }
 
+    if (req.method === 'POST' && parts[0] && parts[1] === 'reply') {
+      const key = `capsule-${parts[0]}`, data = await capsules.get(key,{type:'json'});
+      if(!data)return json({error:'No encontrada'},404);
+      const input=await req.json(), message=String(input.message||'').trim().slice(0,2000);
+      if(!message)return json({error:'Escribe una respuesta'},400);
+      const replies=blobStore('capsule-replies'), id=crypto.randomUUID();
+      await replies.setJSON('reply-'+id,{id,slug:parts[0],message,createdAt:new Date().toISOString()});
+      return json({ok:true});
+    }
+
     if (req.method === 'GET' && parts[0]) {
-      const data = await capsules.get(`capsule-${parts[0]}`, { type: 'json' });
-      return data ? json(data) : json({ error: 'No encontrada' }, 404);
+      const key=`capsule-${parts[0]}`, data = await capsules.get(key, { type: 'json' });
+      if(!data)return json({ error: 'No encontrada' }, 404);
+      data.opens=(Number(data.opens)||0)+1; data.lastOpenedAt=new Date().toISOString();
+      await capsules.setJSON(key,data);
+      return json(data);
     }
 
     if (req.method === 'GET') {
