@@ -12,5 +12,5 @@
 
 [[redirects]]
   from = "/capsule/*"
-  to = "/index.html"
+  to = "/view.html"
   status = 200
