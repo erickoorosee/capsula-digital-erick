@@ -296,8 +296,8 @@ export default async req => {
     if (req.method === 'GET' && parts[0]) {
       const key=`capsule-${parts[0]}`, data = await capsules.get(key, { type: 'json' });
       if(!data)return json({ error: 'No encontrada' }, 404);
-      data.opens=(Number(data.opens)||0)+1; const openedAt=new Date().toISOString(); if(!data.firstOpenedAt)data.firstOpenedAt=openedAt; data.lastOpenedAt=openedAt;
-      await capsules.setJSON(key,data);
+      const url=new URL(req.url),track=url.searchParams.get('track')!=='0';
+      if(track){data.opens=(Number(data.opens)||0)+1; const openedAt=new Date().toISOString(); if(!data.firstOpenedAt)data.firstOpenedAt=openedAt; data.lastOpenedAt=openedAt; await capsules.setJSON(key,data);}
       return json(data);
     }
 
