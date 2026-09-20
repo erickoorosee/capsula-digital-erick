@@ -33,6 +33,14 @@ export default async req => {
       return isAdmin(req) ? json({ ok: true }) : json({ error: 'Contraseña incorrecta' }, 401);
     }
 
+    if (parts[0] === 'media-upload' && req.method === 'POST') {
+      if (!isAdmin(req)) return json({error:'No autorizado'},401);
+      const input=await req.json(),kind=input.type==='video'?'video':'audio',re=kind==='video'?/^data:(video\/[a-zA-Z0-9.+-]+);base64,(.+)$/:/^data:(audio\/[a-zA-Z0-9.+-]+);base64,(.+)$/;
+      const match=String(input.dataUrl||'').match(re);if(!match)return json({error:'Archivo no válido'},400);
+      const bytes=Uint8Array.from(atob(match[2]),x=>x.charCodeAt(0)),limit=kind==='video'?20:8;if(bytes.byteLength>limit*1024*1024)return json({error:'El archivo supera '+limit+' MB'},413);
+      const key=kind+'-'+Date.now()+'-'+crypto.randomUUID();await media.set(key,bytes.buffer,{metadata:{contentType:match[1]}});return json({url:'/api/capsules/media/'+encodeURIComponent(key)});
+    }
+
     if (parts[0] === 'audio-upload' && req.method === 'POST') {
       if (!isAdmin(req)) return json({error:'No autorizado'},401);
       const input=await req.json(), match=String(input.dataUrl||'').match(/^data:(audio\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
@@ -142,6 +150,13 @@ export default async req => {
       if(!allowed.includes(input.status))return json({error:'Estado no válido'},400);
       current.status=input.status; current.updatedAt=new Date().toISOString();
       await orders.setJSON(key,current); return json({ok:true,status:current.status});
+    }
+
+    if (parts[0] === 'reactions' && req.method === 'GET') {
+      if (!isAdmin(req)) return json({error:'No autorizado'},401);
+      const reactions=blobStore('capsule-reactions'),{blobs}=await reactions.list({prefix:'reaction-'}),rows=[];
+      for(const blob of blobs){const x=await reactions.get(blob.key,{type:'json'});if(x){const cap=await capsules.get('capsule-'+x.slug,{type:'json'});rows.push({...x,capsuleName:cap?.name||x.slug})}}
+      return json(rows.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')));
     }
 
     if (parts[0] === 'replies' && req.method === 'GET') {
