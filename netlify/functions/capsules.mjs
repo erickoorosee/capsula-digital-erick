@@ -258,6 +258,7 @@ export default async req => {
       const slug = cleanSlug(data.slug);
       data.slug = slug;
       data.photos = Array.isArray(data.photos) ? data.photos.slice(0, 8) : [];
+      data.whatsapp = String(data.whatsapp || '').replace(/[^0-9+]/g,'').slice(0,20);
       data.updatedAt = new Date().toISOString();
       await capsules.setJSON(`capsule-${slug}`, data);
       return json({ ok: true, slug });
