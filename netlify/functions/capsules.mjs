@@ -33,6 +33,17 @@ export default async req => {
       return isAdmin(req) ? json({ ok: true }) : json({ error: 'Contraseña incorrecta' }, 401);
     }
 
+    if (parts[0] === 'audio-upload' && req.method === 'POST') {
+      if (!isAdmin(req)) return json({error:'No autorizado'},401);
+      const input=await req.json(), match=String(input.dataUrl||'').match(/^data:(audio\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if(!match)return json({error:'Audio no válido'},400);
+      const bytes=Uint8Array.from(atob(match[2]),x=>x.charCodeAt(0));
+      if(bytes.byteLength>8*1024*1024)return json({error:'El audio supera 8 MB'},413);
+      const key='voice-'+Date.now()+'-'+crypto.randomUUID();
+      await media.set(key,bytes.buffer,{metadata:{contentType:match[1]}});
+      return json({url:'/api/capsules/media/'+encodeURIComponent(key)});
+    }
+
     if (parts[0] === 'order-upload' && req.method === 'POST') {
       const input=await req.json();
       const match=String(input.dataUrl||'').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
@@ -192,6 +203,17 @@ export default async req => {
       return json({ ok: true });
     }
 
+    if (req.method === 'POST' && parts[0] && parts[1] === 'reaction') {
+      const key='capsule-'+parts[0], data=await capsules.get(key,{type:'json'});
+      if(!data)return json({error:'No encontrada'},404);
+      const input=await req.json(), allowed=['😍 Me encantó','🥹 Me hiciste llorar','❤️ Te amo','🫶 Gracias'];
+      if(!allowed.includes(input.reaction))return json({error:'Reacción no válida'},400);
+      const reactions=blobStore('capsule-reactions'),id=crypto.randomUUID();
+      await reactions.setJSON('reaction-'+id,{id,slug:parts[0],reaction:input.reaction,createdAt:new Date().toISOString()});
+      data.reactions=(Number(data.reactions)||0)+1;await capsules.setJSON(key,data);
+      return json({ok:true});
+    }
+
     if (req.method === 'POST' && parts[0] && parts[1] === 'reply') {
       const key = `capsule-${parts[0]}`, data = await capsules.get(key,{type:'json'});
       if(!data)return json({error:'No encontrada'},404);
@@ -205,7 +227,7 @@ export default async req => {
     if (req.method === 'GET' && parts[0]) {
       const key=`capsule-${parts[0]}`, data = await capsules.get(key, { type: 'json' });
       if(!data)return json({ error: 'No encontrada' }, 404);
-      data.opens=(Number(data.opens)||0)+1; data.lastOpenedAt=new Date().toISOString();
+      data.opens=(Number(data.opens)||0)+1; const openedAt=new Date().toISOString(); if(!data.firstOpenedAt)data.firstOpenedAt=openedAt; data.lastOpenedAt=openedAt;
       await capsules.setJSON(key,data);
       return json(data);
     }
