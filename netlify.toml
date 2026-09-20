@@ -9,3 +9,8 @@
   from = "/api/capsules/*"
   to = "/.netlify/functions/capsules/:splat"
   status = 200
+
+[[redirects]]
+  from = "/capsule/*"
+  to = "/index.html"
+  status = 200
