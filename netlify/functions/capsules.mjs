@@ -86,6 +86,8 @@ export default async req => {
         notes: String(input.notes || '').trim().slice(0,1500),
         photos: Array.isArray(input.photos) ? input.photos.slice(0, input.package==='Esencial'?3:8) : [],
         status: 'Nuevo',
+        paymentMethod: ['card','transfer','whatsapp'].includes(input.paymentMethod)?input.paymentMethod:'card',
+        paymentStatus: input.paymentMethod==='transfer'?'Esperando comprobante':input.paymentMethod==='whatsapp'?'Autorización manual':'Pendiente',
         createdAt: new Date().toISOString()
       };
       if (!order.client || !order.whatsapp || !order.recipient || !order.message) return json({ error: 'Completa nombre, WhatsApp, destinatario y mensaje' }, 400);
@@ -114,6 +116,14 @@ export default async req => {
         if(id){const keyName='order-'+id,order=await orders.get(keyName,{type:'json'});if(order){order.status='En producción';order.paymentStatus='Pagado';order.paidAt=new Date().toISOString();order.productionStartedAt=new Date().toISOString();order.stripeSessionId=session.id;await orders.setJSON(keyName,order)}}
       }
       return json({received:true});
+    }
+
+    if (parts[0] === 'orders' && parts[1] && parts[2] === 'proof' && req.method === 'POST') {
+      const key='order-'+parts[1],order=await orders.get(key,{type:'json'});if(!order)return json({error:'Pedido no encontrado'},404);
+      const input=await req.json(),m=String(input.dataUrl||'').match(/^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,(.+)$/);if(!m)return json({error:'Comprobante no válido. Usa JPG, PNG, WebP o PDF.'},400);
+      const bytes=Uint8Array.from(atob(m[2]),x=>x.charCodeAt(0));if(bytes.byteLength>6*1024*1024)return json({error:'El comprobante supera 6 MB'},413);
+      const ext=m[1]==='application/pdf'?'pdf':m[1]==='image/png'?'png':m[1]==='image/webp'?'webp':'jpg',mediaKey='proof-'+Date.now()+'-'+crypto.randomUUID()+'.'+ext;
+      await media.set(mediaKey,bytes.buffer,{metadata:{contentType:m[1]}});order.proofUrl='/api/capsules/media/'+encodeURIComponent(mediaKey);order.paymentMethod='transfer';order.paymentStatus='Por verificar';order.proofUploadedAt=new Date().toISOString();order.updatedAt=order.proofUploadedAt;await orders.setJSON(key,order);return json({ok:true});
     }
 
     if (parts[0] === 'checkout' && parts[1] && req.method === 'POST') {
@@ -147,6 +157,7 @@ export default async req => {
       const key='order-'+parts[1], current=await orders.get(key,{type:'json'});
       if(!current)return json({error:'Pedido no encontrado'},404);
       const input=await req.json(), allowed=['Nuevo','Contactado','Pagado','En producción','Entregado'];
+      if(input.approvePayment===true){current.paymentStatus='Pagado';current.status='En producción';current.paidAt=new Date().toISOString();current.approvedAt=current.paidAt;current.updatedAt=current.paidAt;await orders.setJSON(key,current);return json({ok:true,status:current.status,paymentStatus:current.paymentStatus});}
       if(!allowed.includes(input.status))return json({error:'Estado no válido'},400);
       current.status=input.status; current.updatedAt=new Date().toISOString();
       await orders.setJSON(key,current); return json({ok:true,status:current.status});
