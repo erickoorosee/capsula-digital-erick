@@ -133,6 +133,13 @@ export default async req => {
       await orders.setJSON(key,current); return json({ok:true,status:current.status});
     }
 
+    if (parts[0] === 'replies' && req.method === 'GET') {
+      if (!isAdmin(req)) return json({ error:'No autorizado' },401);
+      const replies=blobStore('capsule-replies'), {blobs}=await replies.list({prefix:'reply-'}), rows=[];
+      for(const blob of blobs){const r=await replies.get(blob.key,{type:'json'});if(r){const cap=await capsules.get('capsule-'+r.slug,{type:'json'});rows.push({...r,capsuleName:cap?.name||r.slug,opens:Number(cap?.opens)||0,lastOpenedAt:cap?.lastOpenedAt||''})}}
+      return json(rows.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')));
+    }
+
     if (parts[0] === 'orders' && req.method === 'GET') {
       if (!isAdmin(req)) return json({ error:'No autorizado' },401);
       const { blobs } = await orders.list({ prefix:'order-' });
