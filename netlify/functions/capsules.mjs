@@ -257,10 +257,10 @@ export default async req => {
     if (req.method === 'POST' && parts[0] && parts[1] === 'reaction') {
       const key='capsule-'+parts[0], data=await capsules.get(key,{type:'json'});
       if(!data)return json({error:'No encontrada'},404);
-      const input=await req.json(), allowed=['😍 Me encantó','🥹 Me hiciste llorar','❤️ Te amo','🫶 Gracias'];
-      if(!allowed.includes(input.reaction))return json({error:'Reacción no válida'},400);
+      const input=await req.json(), raw=String(input.reaction||'').trim(), label=raw.replace(/^[^\p{L}]+/u,'').trim(), allowed=['Me encantó','Me hiciste llorar','Te amo','Gracias'];
+      if(!allowed.includes(label))return json({error:'Reacción no válida'},400);
       const reactions=blobStore('capsule-reactions'),id=crypto.randomUUID();
-      await reactions.setJSON('reaction-'+id,{id,slug:parts[0],reaction:input.reaction,createdAt:new Date().toISOString()});
+      await reactions.setJSON('reaction-'+id,{id,slug:parts[0],reaction:raw,createdAt:new Date().toISOString()});
       data.reactions=(Number(data.reactions)||0)+1;await capsules.setJSON(key,data);
       return json({ok:true});
     }
