@@ -87,7 +87,7 @@ export default async req => {
       const event=JSON.parse(payload);
       if(event.type==='checkout.session.completed'&&event.data?.object?.payment_status==='paid'){
         const session=event.data.object, id=session.metadata?.order_id||session.client_reference_id;
-        if(id){const keyName='order-'+id,order=await orders.get(keyName,{type:'json'});if(order){order.status='Pagado';order.paymentStatus='Pagado';order.paidAt=new Date().toISOString();order.stripeSessionId=session.id;await orders.setJSON(keyName,order)}}
+        if(id){const keyName='order-'+id,order=await orders.get(keyName,{type:'json'});if(order){order.status='En producción';order.paymentStatus='Pagado';order.paidAt=new Date().toISOString();order.productionStartedAt=new Date().toISOString();order.stripeSessionId=session.id;await orders.setJSON(keyName,order)}}
       }
       return json({received:true});
     }
