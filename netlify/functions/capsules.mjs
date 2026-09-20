@@ -95,6 +95,15 @@ export default async req => {
       return json({ ok:true, id:order.id });
     }
 
+    if (parts[0] === 'order-status' && req.method === 'GET') {
+      const url=new URL(req.url),folio=String(url.searchParams.get('folio')||'').replace(/^CD-/i,'').toUpperCase(),phone=String(url.searchParams.get('phone')||'').replace(/\D/g,'');
+      if(folio.length<4||phone.length<7)return json({error:'Escribe tu folio y WhatsApp'},400);
+      const {blobs}=await orders.list({prefix:'order-'});let found=null;
+      for(const blob of blobs){const o=await orders.get(blob.key,{type:'json'});if(o&&o.id.slice(0,8).toUpperCase()===folio&&String(o.whatsapp||'').replace(/\D/g,'').endsWith(phone.slice(-10))){found=o;break}}
+      if(!found)return json({error:'No encontramos un pedido con esos datos'},404);
+      return json({folio:found.id.slice(0,8).toUpperCase(),recipient:found.recipient,package:found.package,status:found.status||'Nuevo',paymentStatus:found.paymentStatus||'Pendiente',paymentMethod:found.paymentMethod||'card',updatedAt:found.updatedAt||found.createdAt});
+    }
+
     if (parts[0] === 'stripe-webhook' && req.method === 'POST') {
       const secret=Netlify.env.get('STRIPE_WEBHOOK_SECRET')||'';
       if(!secret.startsWith('whsec_'))return json({error:'Webhook de Stripe no configurado'},500);
