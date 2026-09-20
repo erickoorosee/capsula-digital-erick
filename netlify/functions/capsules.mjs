@@ -52,6 +52,14 @@ export default async req => {
       return json({url:'/api/capsules/media/'+encodeURIComponent(key)});
     }
 
+    if (parts[0] === 'order-video-upload' && req.method === 'POST') {
+      const input=await req.json(),match=String(input.dataUrl||'').match(/^data:(video\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if(!match)return json({error:'Video no válido'},400);
+      const bytes=Uint8Array.from(atob(match[2]),x=>x.charCodeAt(0));if(bytes.byteLength>20*1024*1024)return json({error:'El video supera 20 MB'},413);
+      const key='customer-video-'+Date.now()+'-'+crypto.randomUUID();await media.set(key,bytes.buffer,{metadata:{contentType:match[1]}});
+      return json({url:'/api/capsules/media/'+encodeURIComponent(key)});
+    }
+
     if (parts[0] === 'order-audio-upload' && req.method === 'POST') {
       const input=await req.json(),match=String(input.dataUrl||'').match(/^data:(audio\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
       if(!match)return json({error:'Audio no válido'},400);
